@@ -1,27 +1,35 @@
 # Backend Run Guide
 
-## One-time setup
+## Install Dependencies
 
-Run from `E:\Fullstack\backend`:
-
-```powershell
-.\setup_backend.ps1
-```
-
-## Start FastAPI
+Run from `E:\Multi-Model-Fatigue-Detection`:
 
 ```powershell
-.\run_backend.ps1
+pip install -r backend/requirements.txt
 ```
 
-## Start FastAPI with auto-reload
+## Run in Development
 
 ```powershell
-.\run_backend.ps1 -Reload
+cd backend
+$env:PORT = 8000
+python app.py
 ```
 
-## Notes
+## Run in Production
 
-- The scripts use an isolated virtual environment at `backend\.venv`.
-- This avoids global package conflicts from system Python.
-- API base URL remains `http://localhost:5000`.
+```powershell
+cd backend
+gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$env:PORT app:app
+```
+
+## API
+
+- `GET /` health check
+- `POST /predict` with multipart form field `image`
+
+Example request:
+
+```powershell
+curl -X POST "http://localhost:8000/predict" -F "image=@sample.jpg"
+```

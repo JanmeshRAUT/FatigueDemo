@@ -48,7 +48,8 @@ def determine_label(temperature, hr, spo2, perclos, yawn_status):
 
 # ---------------- DATA COLLECTION LOOP ----------------
 count = 0
-while True:
+running = True
+while running:
     try:
         response = requests.get(FLASK_URL, timeout=5)
         if response.status_code != 200:
@@ -95,7 +96,7 @@ while True:
 
     except KeyboardInterrupt:
         print("\n🛑 Stopped data collection.")
-        break
+        running = False
     except Exception as e:
         print(f"⚠️ Error fetching/saving data: {e}")
         time.sleep(SAMPLE_INTERVAL)

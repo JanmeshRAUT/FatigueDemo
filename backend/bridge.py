@@ -30,7 +30,7 @@ def bridge():
         time.sleep(2) # Allow reset
         print("✅ Serial Connection Established")
         
-        while True:
+        while ser and ser.is_open:
             if ser.in_waiting > 0:
                 line = ser.readline().decode('utf-8', errors='ignore').strip()
                 if not line: continue

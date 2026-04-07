@@ -172,14 +172,17 @@ def update_head_position_data():
     })
     return head_position_data
 
-def serial_reader():
+def serial_reader(stop_event=None):
     """Main serial reading loop with auto-reconnect and fallback to mock data"""
+    if stop_event is None:
+        stop_event = threading.Event()
+
     connection_attempts = 0
     last_port = None
     using_mock_data = False
     MAX_CONNECTION_ATTEMPTS = 5
 
-    while True:
+    while not stop_event.is_set():
         # Auto-detect port on each reconnection attempt
         port = find_arduino_port()
         
@@ -218,7 +221,7 @@ def serial_reader():
             time.sleep(2)  # Stabilize
             
             # Reading Loop
-            while True:
+            while not stop_event.is_set():
                 if ser.in_waiting > 0:
                     line = ser.readline().decode('utf-8', errors='ignore').strip()
                     if not line:
