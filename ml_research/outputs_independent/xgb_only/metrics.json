@@ -1,0 +1,40 @@
+{
+  "model": "xgboost_independent",
+  "run_started_at_utc": "2026-03-14T16:01:47.342376Z",
+  "total_runtime_seconds": 3.56,
+  "dataset_path": "data\\fatigue_dataset_80_accuracy.csv",
+  "rows_before_cleaning": 10000,
+  "rows_after_cleaning": 10000,
+  "dropped_rows": 0,
+  "class_distribution": {
+    "0": 3312,
+    "1": 3362,
+    "2": 3326
+  },
+  "n_features": 13,
+  "features": [
+    "EAR",
+    "MAR",
+    "PERCLOS",
+    "blink_rate",
+    "head_pitch",
+    "head_yaw",
+    "head_roll",
+    "heart_rate",
+    "spo2",
+    "temperature",
+    "ear_mar_ratio",
+    "perclos_blink_interaction",
+    "head_motion_sum"
+  ],
+  "cv_folds": 5,
+  "best_params": {
+    "epochs": 200,
+    "early_stopping_rounds": 20,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "min_child_weight": 3
+  },
+  "best_val_macro_f1": 0.8374416114129891,
+  "test_macro_f1": 0.8469998078252835
+}

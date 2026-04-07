@@ -1,0 +1,38 @@
+.warning {
+  color: var(--alarm-red);
+  font-weight: 600;
+}
+
+.temp-status {
+  font-size: 0.875rem;
+  margin-left: 8px;
+  font-style: italic;
+  color: var(--text-muted);
+  transition: color 0.3s ease;
+}
+
+.status-reason {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-style: italic;
+  transition: color 0.3s ease;
+}
+
+.fatigue-status.high {
+  background-color: var(--danger-bg);
+  border-color: var(--alarm-red);
+  transition: all 0.3s ease;
+}
+
+.fatigue-status.medium {
+  background-color: var(--warning-bg);
+  border-color: var(--alert-orange);
+  transition: all 0.3s ease;
+}
+
+.fatigue-status.low {
+  background-color: var(--success-bg);
+  border-color: var(--valid-green);
+  transition: all 0.3s ease;
+}

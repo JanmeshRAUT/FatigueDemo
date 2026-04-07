@@ -1,0 +1,25 @@
+{
+  "model": "random_forest_independent",
+  "run_started_at_utc": "2026-03-14T15:52:26.425705Z",
+  "total_runtime_seconds": 67.64,
+  "dataset_path": "data\\fatigue_dataset_80_accuracy.csv",
+  "rows_before_cleaning": 10000,
+  "rows_after_cleaning": 10000,
+  "dropped_rows": 0,
+  "class_distribution": {
+    "0": 3312,
+    "1": 3362,
+    "2": 3326
+  },
+  "cv_folds": 5,
+  "best_params": {
+    "n_estimators": 160,
+    "max_depth": 10,
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "max_features": "sqrt",
+    "class_weight": "balanced_subsample"
+  },
+  "cv_best_macro_f1": 0.8458492648413211,
+  "test_macro_f1": 0.8309801863991311
+}

@@ -1,0 +1,11 @@
+{
+  "name": "myapp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm start --prefix frontend\" \"python -u backend/server.py\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

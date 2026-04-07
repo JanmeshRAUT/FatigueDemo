@@ -1,0 +1,49 @@
+/* Shared Vehicle UI tokens */
+
+.tone-safe {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.tone-warning {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.tone-danger {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.tone-neutral {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+[data-theme="dark"] .tone-safe {
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+[data-theme="dark"] .tone-warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+[data-theme="dark"] .tone-danger {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+[data-theme="dark"] .tone-neutral {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.28);
+}

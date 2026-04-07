@@ -1,0 +1,32 @@
+# General
+.DS_Store
+.env
+*.log
+.git_disconnected_*/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+env/
+venv/
+ENV/
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.next/
+out/
+.vercel
+
+# Project Specific
+ml_model/
+*.csv
+*.pkl
+*.h5
+backend/logs/
+backend/__pycache__/
+frontend/node_modules/

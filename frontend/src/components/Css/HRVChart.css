@@ -1,0 +1,64 @@
+/* HRV Chart Styles */
+
+.hrv-container {
+  width: 100%;
+  height: 100%;
+}
+
+.hrv-tooltip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.hrv-display {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  text-align: right;
+  pointer-events: none;
+}
+
+.hrv-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #8b5cf6;
+  line-height: 1;
+}
+
+.hrv-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+@keyframes spinnerRotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinnerBounce {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

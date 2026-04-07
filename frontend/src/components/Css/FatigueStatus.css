@@ -1,0 +1,370 @@
+/* Fatigue Status Component Styles */
+
+.fatigue-status-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Header Styles */
+.fatigue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.fatigue-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fatigue-model-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fatigue-model-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fatigue-model-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.fatigue-reset-button {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  transition: opacity 0.2s;
+}
+
+.fatigue-reset-button:hover {
+  opacity: 0.7;
+}
+
+.fatigue-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.fatigue-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* Prediction Box Styles */
+.fatigue-prediction-box {
+  position: relative; /* Essential for overlay */
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.fatigue-prediction-box.high {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.fatigue-prediction-box.medium {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+.fatigue-prediction-box.info {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.fatigue-prediction-box.low {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+[data-theme="dark"] .fatigue-prediction-box.high {
+  background: #7f1d1d;
+  border-color: #dc2626;
+}
+
+[data-theme="dark"] .fatigue-prediction-box.medium {
+  background: #78350f;
+  border-color: #d97706;
+}
+
+[data-theme="dark"] .fatigue-prediction-box.info {
+  background: #082f49;
+  border-color: #2563eb;
+}
+
+[data-theme="dark"] .fatigue-prediction-box.low {
+  background: #064e3b;
+  border-color: #16a34a;
+}
+
+.fatigue-class-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.fatigue-class-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.fatigue-class-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text-main);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+/* Driver Section */
+.fatigue-driver-section {
+  border-bottom: 1px solid;
+  border-color: rgba(0, 0, 0, 0.05);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+[data-theme="dark"] .fatigue-driver-section {
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.fatigue-driver-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.fatigue-driver-reason {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+/* Confidence Section */
+.fatigue-confidence-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.fatigue-confidence-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.fatigue-confidence-value {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.fatigue-confidence-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .fatigue-confidence-bar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.fatigue-confidence-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.fatigue-confidence-fill.high {
+  background: #ef4444;
+}
+
+.fatigue-confidence-fill.medium {
+  background: #f59e0b;
+}
+
+.fatigue-confidence-fill.info {
+  background: #3b82f6;
+}
+
+.fatigue-confidence-fill.low {
+  background: #22c55e;
+}
+
+.fatigue-confidence-fill.pulse {
+  animation: pulse 2s infinite;
+}
+
+/* Features Section */
+.fatigue-features-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fatigue-features-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.risk-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.risk-factor-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.risk-factor-item {
+  display: block;
+}
+
+.risk-factor-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.risk-factor-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.risk-factor-raw {
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: var(--text-main);
+}
+
+.risk-factor-bar-container {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.risk-factor-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-surface-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.risk-factor-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+.risk-factor-bar-fill.high {
+  background: #6366f1;
+}
+
+.risk-factor-bar-fill.low {
+  background: var(--text-muted);
+}
+
+.risk-factor-value {
+  font-size: 0.65rem;
+  font-family: monospace;
+  color: var(--text-faint);
+  width: 30px;
+  text-align: right;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Calibration Overlay Styles */
+.fatigue-calibration-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-surface);
+  border-radius: 12px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--primary);
+}
+
+.calibration-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spinnerLoad 1s linear infinite;
+}
+
+.calibration-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.calib-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: 0.5px;
+}
+
+.calib-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}

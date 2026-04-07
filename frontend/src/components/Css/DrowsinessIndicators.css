@@ -1,0 +1,88 @@
+/* === INLINE HEADER INDICATOR (MODIFIED) === */
+.fatigue-indicator-container {
+  position: relative;
+  /* Removed Fixed positioning to sit in header */
+  z-index: 10;
+}
+
+/* === MAIN INDICATOR BOX (MINIMAL TECH) === */
+.fatigue-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 6px; /* Technical squarish radius */
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fatigue-indicator:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+/* === ICON & TEXT === */
+.indicator-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.indicator-icon svg { width: 14px; height: 14px; stroke-width: 3px; }
+
+.indicator-label {
+  color: #ffffff; /* Always white text for contrast */
+  font-weight: 700;
+}
+
+/* === LEVEL COLORS (SOLID BADGE) === */
+.fatigue-indicator.low {
+  background: #10b981; /* Emerald 500 */
+  border: 1px solid #059669;
+  box-shadow: 0 2px 5px rgba(16, 185, 129, 0.2);
+}
+.fatigue-indicator.low .indicator-icon { color: white; }
+
+.fatigue-indicator.medium {
+  background: #f59e0b; /* Amber 500 */
+  border: 1px solid #d97706;
+  box-shadow: 0 2px 5px rgba(245, 158, 11, 0.2);
+}
+.fatigue-indicator.medium .indicator-icon { color: white; }
+
+.fatigue-indicator.high {
+  background: #ef4444; /* Red 500 */
+  border: 1px solid #dc2626;
+  box-shadow: 0 2px 5px rgba(239, 68, 68, 0.3);
+}
+.fatigue-indicator.high .indicator-icon { color: white; }
+.fatigue-indicator.high .indicator-label { color: white; }
+
+
+/* === BLINK EFFECT WHEN HIGH === */
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.fatigue-indicator.high {
+  animation: pulse-red 2s infinite;
+}
+
+/* Responsive fix */
+@media (max-width: 768px) {
+  .fatigue-indicator-container {
+    top: auto;
+    bottom: 24px; 
+    right: 24px;
+    left: 24px;
+    display: flex;
+    justify-content: center;
+  }
+}
