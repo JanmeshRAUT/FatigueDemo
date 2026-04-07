@@ -4,7 +4,9 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
     from slowapi.util import get_remote_address
@@ -44,6 +46,13 @@ else:
     limiter = _NoopLimiter()
 
 app = FastAPI(title="Fatigue Detection API", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 if Limiter is not None:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -82,6 +91,15 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(f"Request validation error on {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=400,
+        content={"status": "error", "message": "Invalid request payload. Send multipart/form-data with file key 'file'."},
+    )
+
+
 if RateLimitExceeded is not None:
     @app.exception_handler(RateLimitExceeded)
     async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
@@ -108,9 +126,10 @@ async def health_check() -> dict[str, str]:
 
 
 @app.post("/api/v1/predict")
+@app.post("/predict")
 @limiter.limit("5/minute")  # Stricter limit for prediction endpoint
-async def predict(request: Request, image: UploadFile = File(...)) -> dict[str, Any]:
-    logger.info(f"Received prediction request: {image.filename}")
+async def predict(request: Request, file: UploadFile = File(..., alias="file")) -> dict[str, Any]:
+    logger.info(f"Received prediction request on {request.url.path}: {file.filename}")
 
     if IMPORT_INIT_ERROR is not None:
         raise HTTPException(status_code=503, detail="Service initialization failed. Check startup logs.")
@@ -120,7 +139,7 @@ async def predict(request: Request, image: UploadFile = File(...)) -> dict[str, 
     
     # Security: Validate content type
     allowed_types = ["image/jpeg", "image/png", "image/jpg"]
-    if image.content_type not in allowed_types:
+    if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG and PNG images are allowed.")
     
     # Security: Limit file size (10MB)
@@ -129,7 +148,7 @@ async def predict(request: Request, image: UploadFile = File(...)) -> dict[str, 
     image_bytes = b""
     chunk_size = 1024 * 1024  # 1MB chunks
     while True:
-        chunk = await image.read(chunk_size)
+        chunk = await file.read(chunk_size)
         if not chunk:
             break
         file_size += len(chunk)
@@ -142,14 +161,6 @@ async def predict(request: Request, image: UploadFile = File(...)) -> dict[str, 
 
     try:
         result, confidence = run_inference(session, image_bytes)
-
-        # Determine model input type
-        input_meta = session.get_inputs()[0]
-        input_shape = input_meta.shape
-        if len(input_shape) == 2 and input_shape[1] == 13:
-            model_input_type = "feature"
-        else:
-            model_input_type = "image"
 
         logger.info(f"Prediction completed: {result}, confidence: {confidence:.3f}")
         return {
