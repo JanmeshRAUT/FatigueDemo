@@ -235,21 +235,19 @@ def decode_image_from_bytes(image_bytes: bytes) -> np.ndarray:
     return image
 
 
-def run_inference(session: Any, image_bytes: bytes) -> tuple[Any, float]:
-    image = decode_image_from_bytes(image_bytes)
+def run_inference_from_image(session: Any, image: np.ndarray) -> tuple[Any, float]:
+    """Run inference from an already-decoded OpenCV image."""
+    _ensure_runtime_dependencies()
 
     input_meta = session.get_inputs()[0]
     input_name = input_meta.name
     input_shape = input_meta.shape
 
-    # Check if model expects features or image
     if len(input_shape) == 2 and input_shape[1] == 13:
-        # Feature-based model
         features = extract_features(image)
         model_input = np.array([features], dtype=np.float32)
         logger.debug(f"Input shape sent to model: {model_input.shape}")
     else:
-        # Image-based model (fallback)
         model_input = _prepare_tensor_from_image(image, input_shape)
         logger.debug(f"Input shape sent to model: {model_input.shape}")
 
@@ -261,16 +259,20 @@ def run_inference(session: Any, image_bytes: bytes) -> tuple[Any, float]:
     else:
         result = primary
 
-    # Extract confidence (assuming probabilities are in outputs[1])
     confidence = 0.0
     if len(outputs) > 1:
         probs = outputs[1]
         if hasattr(probs, "tolist"):
             probs = probs.tolist()
         if isinstance(probs, list) and len(probs) > 0 and isinstance(probs[0], list):
-            confidence = max(probs[0])  # Max probability
+            confidence = max(probs[0])
         elif isinstance(probs, list):
             confidence = max(probs)
 
     logger.debug(f"Model output: {result}, confidence: {confidence}")
     return result, confidence
+
+
+def run_inference(session: Any, image_bytes: bytes) -> tuple[Any, float]:
+    image = decode_image_from_bytes(image_bytes)
+    return run_inference_from_image(session, image)

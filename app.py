@@ -1,9 +1,12 @@
 import os
+import asyncio
+import base64
+import binascii
 import logging
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,11 +25,13 @@ except Exception as exc:
     SLOWAPI_IMPORT_ERROR = exc
 
 try:
-    from inference import run_inference
+    from inference import run_inference, run_inference_from_image, decode_image_from_bytes
     from model import get_onnx_session
     IMPORT_INIT_ERROR = None
 except Exception as exc:
     run_inference = None
+    run_inference_from_image = None
+    decode_image_from_bytes = None
     get_onnx_session = None
     IMPORT_INIT_ERROR = exc
 
@@ -125,55 +130,137 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok" if session is not None else "error"}
 
 
-@app.post("/api/v1/predict")
-@app.post("/predict")
-@limiter.limit("5/minute")  # Stricter limit for prediction endpoint
-async def predict(request: Request, file: UploadFile = File(..., alias="file")) -> dict[str, Any]:
-    logger.info(f"Received prediction request on {request.url.path}: {file.filename}")
+def _validate_upload_metadata(content_type: str | None) -> None:
+    allowed_types = ["image/jpeg", "image/png", "image/jpg"]
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG and PNG images are allowed.")
 
+
+async def _read_upload_bytes(file: UploadFile) -> bytes:
+    max_file_size = 10 * 1024 * 1024
+    image_bytes = b""
+    chunk_size = 1024 * 1024
+
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        image_bytes += chunk
+        if len(image_bytes) > max_file_size:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    return image_bytes
+
+
+async def _predict_from_bytes(route_name: str, image_bytes: bytes) -> dict[str, Any]:
     if IMPORT_INIT_ERROR is not None:
         raise HTTPException(status_code=503, detail="Service initialization failed. Check startup logs.")
 
     if session is None:
         raise HTTPException(status_code=503, detail="Model is not available. Please try again later.")
-    
-    # Security: Validate content type
-    allowed_types = ["image/jpeg", "image/png", "image/jpg"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG and PNG images are allowed.")
-    
-    # Security: Limit file size (10MB)
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-    file_size = 0
-    image_bytes = b""
-    chunk_size = 1024 * 1024  # 1MB chunks
-    while True:
-        chunk = await file.read(chunk_size)
-        if not chunk:
-            break
-        file_size += len(chunk)
-        if file_size > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
-        image_bytes += chunk
-    
-    if not image_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    logger.info(f"Processing prediction from {route_name} ({len(image_bytes)} bytes)")
 
     try:
-        result, confidence = run_inference(session, image_bytes)
-
-        logger.info(f"Prediction completed: {result}, confidence: {confidence:.3f}")
+        result, confidence = await asyncio.to_thread(run_inference, session, image_bytes)
+        logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}")
         return {
             "status": "success",
             "prediction": result,
             "confidence": round(confidence, 3),
         }
     except ValueError as exc:
-        logger.warning(f"Validation error: {exc}")
+        logger.warning(f"Validation error for {route_name}: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("Inference failed")
-        raise HTTPException(status_code=500, detail="Internal server error during inference.") from exc
+    except Exception:
+        logger.exception(f"Inference failed for {route_name}")
+        raise HTTPException(status_code=500, detail="Internal server error during inference.")
+
+
+async def _predict_from_image(route_name: str, image) -> dict[str, Any]:
+    if IMPORT_INIT_ERROR is not None:
+        raise HTTPException(status_code=503, detail="Service initialization failed. Check startup logs.")
+
+    if session is None:
+        raise HTTPException(status_code=503, detail="Model is not available. Please try again later.")
+
+    logger.info(f"Processing prediction from {route_name} (decoded image)")
+
+    try:
+        result, confidence = await asyncio.to_thread(run_inference_from_image, session, image)
+        logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}")
+        return {
+            "status": "success",
+            "prediction": result,
+            "confidence": round(confidence, 3),
+        }
+    except ValueError as exc:
+        logger.warning(f"Validation error for {route_name}: {exc}")
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        logger.exception(f"Inference failed for {route_name}")
+        raise HTTPException(status_code=500, detail="Internal server error during inference.")
+
+
+@app.post("/api/v1/predict")
+@app.post("/predict")
+@limiter.limit("5/minute")  # Stricter limit for prediction endpoint
+async def predict(request: Request, file: UploadFile = File(..., alias="file")) -> dict[str, Any]:
+    logger.info(f"Received HTTP prediction request on {request.url.path}: {file.filename}")
+    _validate_upload_metadata(file.content_type)
+    image_bytes = await _read_upload_bytes(file)
+    return await _predict_from_bytes(f"http:{request.url.path}", image_bytes)
+
+
+@app.websocket("/ws")
+async def websocket_predict(websocket: WebSocket):
+    await websocket.accept()
+    logger.info(f"WebSocket connection opened from {websocket.client}")
+
+    try:
+        while True:
+            try:
+                payload = await websocket.receive_json()
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket connection closed by client: {websocket.client}")
+                break
+            except Exception as exc:
+                logger.warning(f"Invalid WebSocket JSON from {websocket.client}: {exc}")
+                await websocket.send_json({"status": "error", "message": "Invalid JSON payload. Expected {\"image_data\": \"data:image/jpeg;base64,...\"}."})
+                continue
+
+            image_data = payload.get("image_data") if isinstance(payload, dict) else None
+            if not image_data:
+                await websocket.send_json({"status": "error", "message": "Missing image_data field."})
+                continue
+
+            try:
+                if not isinstance(image_data, str):
+                    raise ValueError("image_data must be a base64 string.")
+
+                if "," in image_data:
+                    _, base64_data = image_data.split(",", 1)
+                else:
+                    base64_data = image_data
+
+                try:
+                    frame_bytes = base64.b64decode(base64_data, validate=True)
+                except (binascii.Error, ValueError) as exc:
+                    raise ValueError("Invalid base64 image data.") from exc
+
+                image = decode_image_from_bytes(frame_bytes)
+                response = await _predict_from_image("ws:/ws", image)
+                await websocket.send_json(response)
+            except HTTPException as exc:
+                await websocket.send_json({"status": "error", "message": exc.detail})
+            except Exception as exc:
+                logger.exception("Unexpected WebSocket processing error")
+                await websocket.send_json({"status": "error", "message": str(exc) or "Internal server error during streaming inference."})
+    finally:
+        logger.info(f"WebSocket connection closed for {websocket.client}")
 
 
 if __name__ == "__main__":
