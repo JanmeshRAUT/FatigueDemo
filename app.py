@@ -216,9 +216,10 @@ async def predict(request: Request, file: UploadFile = File(..., alias="file")) 
 
 
 @app.websocket("/ws")
+@app.websocket("/ws/detect")
 async def websocket_predict(websocket: WebSocket):
     await websocket.accept()
-    logger.info(f"WebSocket connection opened from {websocket.client}")
+    logger.info(f"WebSocket connection opened on {websocket.url.path} from {websocket.client}")
 
     try:
         while True:
@@ -232,6 +233,7 @@ async def websocket_predict(websocket: WebSocket):
                 await websocket.send_json({"status": "error", "message": "Invalid JSON payload. Expected {\"image_data\": \"data:image/jpeg;base64,...\"}."})
                 continue
 
+            logger.info(f"WebSocket frame received on {websocket.url.path} from {websocket.client}")
             image_data = payload.get("image_data") if isinstance(payload, dict) else None
             if not image_data:
                 await websocket.send_json({"status": "error", "message": "Missing image_data field."})
@@ -259,8 +261,10 @@ async def websocket_predict(websocket: WebSocket):
             except Exception as exc:
                 logger.exception("Unexpected WebSocket processing error")
                 await websocket.send_json({"status": "error", "message": str(exc) or "Internal server error during streaming inference."})
+    except Exception:
+        logger.exception(f"WebSocket loop crashed unexpectedly for {websocket.client}")
     finally:
-        logger.info(f"WebSocket connection closed for {websocket.client}")
+        logger.info(f"WebSocket connection closed on {websocket.url.path} for {websocket.client}")
 
 
 if __name__ == "__main__":

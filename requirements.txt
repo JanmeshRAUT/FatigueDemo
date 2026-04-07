@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 gunicorn
 numpy
 opencv-python-headless
@@ -8,3 +8,6 @@ pillow
 python-multipart
 mediapipe
 slowapi
+websockets
+httptools
+uvloop
