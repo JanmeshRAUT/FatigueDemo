@@ -3,6 +3,7 @@ import asyncio
 import base64
 import binascii
 import logging
+import threading
 from typing import Any
 
 import uvicorn
@@ -25,12 +26,12 @@ except Exception as exc:
     SLOWAPI_IMPORT_ERROR = exc
 
 try:
-    from inference import run_inference, run_inference_from_image, decode_image_from_bytes
+    from inference import run_inference, analyze_frame, decode_image_from_bytes
     from model import get_onnx_session
     IMPORT_INIT_ERROR = None
 except Exception as exc:
     run_inference = None
-    run_inference_from_image = None
+    analyze_frame = None
     decode_image_from_bytes = None
     get_onnx_session = None
     IMPORT_INIT_ERROR = exc
@@ -66,6 +67,20 @@ else:
     logger.warning("slowapi is unavailable; rate limiting is disabled")
 
 session = None
+state_lock = threading.Lock()
+last_prediction = "unknown"
+last_confidence = 0.0
+last_ear = 0.0
+last_mar = 0.0
+
+
+def _update_prediction_state(prediction: Any, confidence: float, ear: float, mar: float) -> None:
+    global last_prediction, last_confidence, last_ear, last_mar
+    with state_lock:
+        last_prediction = prediction
+        last_confidence = float(confidence)
+        last_ear = float(ear)
+        last_mar = float(mar)
 
 
 @app.on_event("startup")
@@ -130,6 +145,49 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok" if session is not None else "error"}
 
 
+@app.get("/api/combined_data")
+async def combined_data() -> dict[str, Any]:
+    with state_lock:
+        current_prediction = last_prediction
+        current_confidence = last_confidence
+        current_ear = last_ear
+        current_mar = last_mar
+
+    return {
+        "sensor": {
+            "hr": 72,
+            "temperature": 36.5,
+            "spo2": 98,
+        },
+        "perclos": {
+            "ear": current_ear,
+            "mar": current_mar,
+            "status": current_prediction,
+        },
+        "prediction": {
+            "status": current_prediction,
+            "confidence": current_confidence,
+        },
+    }
+
+
+@app.get("/api/vehicle/combined_data")
+async def vehicle_combined_data() -> dict[str, Any]:
+    with state_lock:
+        current_prediction = last_prediction
+        current_confidence = last_confidence
+
+    return {
+        "speed": 0,
+        "steering_angle": 0,
+        "lane_status": "stable",
+        "prediction": {
+            "status": current_prediction,
+            "confidence": current_confidence,
+        },
+    }
+
+
 def _validate_upload_metadata(content_type: str | None) -> None:
     allowed_types = ["image/jpeg", "image/png", "image/jpg"]
     if content_type not in allowed_types:
@@ -166,6 +224,7 @@ async def _predict_from_bytes(route_name: str, image_bytes: bytes) -> dict[str, 
 
     try:
         result, confidence = await asyncio.to_thread(run_inference, session, image_bytes)
+        _update_prediction_state(result, confidence, last_ear, last_mar)
         logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}")
         return {
             "status": "success",
@@ -190,7 +249,10 @@ async def _predict_from_image(route_name: str, image) -> dict[str, Any]:
     logger.info(f"Processing prediction from {route_name} (decoded image)")
 
     try:
-        result, confidence = await asyncio.to_thread(run_inference_from_image, session, image)
+        analysis = await asyncio.to_thread(analyze_frame, session, image)
+        result = analysis["prediction"]
+        confidence = analysis["confidence"]
+        _update_prediction_state(result, confidence, analysis["ear"], analysis["mar"])
         logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}")
         return {
             "status": "success",

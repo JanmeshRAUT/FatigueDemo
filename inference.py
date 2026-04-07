@@ -276,3 +276,80 @@ def run_inference_from_image(session: Any, image: np.ndarray) -> tuple[Any, floa
 def run_inference(session: Any, image_bytes: bytes) -> tuple[Any, float]:
     image = decode_image_from_bytes(image_bytes)
     return run_inference_from_image(session, image)
+
+
+def analyze_frame(session: Any, image: np.ndarray) -> dict[str, Any]:
+    """Analyze a decoded frame and return prediction plus feature metadata."""
+    _ensure_runtime_dependencies()
+
+    face_mesh = get_face_mesh()
+    h, w, _ = image.shape
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb)
+
+    if not results.multi_face_landmarks:
+        logger.warning("No face detected in image")
+        raise ValueError("No face detected in the uploaded image")
+
+    lm = results.multi_face_landmarks[0]
+
+    left_eye = [(lm.landmark[i].x * w, lm.landmark[i].y * h) for i in LEFT_EYE]
+    right_eye = [(lm.landmark[i].x * w, lm.landmark[i].y * h) for i in RIGHT_EYE]
+    ear = (eye_aspect_ratio(left_eye) + eye_aspect_ratio(right_eye)) / 2
+
+    mouth = [(lm.landmark[i].x * w, lm.landmark[i].y * h) for i in MOUTH_INNER]
+    mar = mouth_aspect_ratio(mouth)
+
+    pitch, yaw, roll = calculate_head_pose(lm.landmark, w, h)
+
+    perclos = 0.0
+    blink_rate = 0.0
+    heart_rate = 0.0
+    spo2 = 0.0
+    temperature = 0.0
+
+    eps = 1e-6
+    ear_mar_ratio = ear / (mar + eps)
+    perclos_blink_interaction = perclos * blink_rate
+    head_motion_sum = abs(pitch) + abs(yaw) + abs(roll)
+
+    input_meta = session.get_inputs()[0]
+    input_name = input_meta.name
+    input_shape = input_meta.shape
+    model_input = np.array([
+        ear, mar, perclos, blink_rate,
+        pitch, yaw, roll,
+        heart_rate, spo2, temperature,
+        ear_mar_ratio, perclos_blink_interaction, head_motion_sum,
+    ], dtype=np.float32).reshape(1, -1)
+
+    if not (len(input_shape) == 2 and input_shape[1] == 13):
+        model_input = _prepare_tensor_from_image(image, input_shape)
+        logger.debug(f"Image-based model input shape sent: {model_input.shape}")
+    else:
+        logger.debug(f"Feature-based model input shape sent: {model_input.shape}")
+
+    outputs = session.run(None, {input_name: model_input})
+    primary = outputs[0]
+    if hasattr(primary, "tolist"):
+        prediction = primary.tolist()
+    else:
+        prediction = primary
+
+    confidence = 0.0
+    if len(outputs) > 1:
+        probs = outputs[1]
+        if hasattr(probs, "tolist"):
+            probs = probs.tolist()
+        if isinstance(probs, list) and len(probs) > 0 and isinstance(probs[0], list):
+            confidence = max(probs[0])
+        elif isinstance(probs, list):
+            confidence = max(probs)
+
+    logger.debug(f"Frame analyzed: prediction={prediction}, confidence={confidence}, ear={ear}, mar={mar}")
+    return {
+        "prediction": prediction,
+        "confidence": confidence,
+        "ear": ear,
+        "mar": mar,
+    }
