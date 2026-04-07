@@ -1,18 +1,73 @@
 from typing import Any
 import logging
+import threading
 
-import cv2
-import mediapipe as mp
-import numpy as np
+try:
+    import cv2
+    CV2_IMPORT_ERROR = None
+except Exception as exc:
+    cv2 = None
+    CV2_IMPORT_ERROR = exc
+
+try:
+    import mediapipe as mp
+    MEDIAPIPE_IMPORT_ERROR = None
+except Exception as exc:
+    mp = None
+    MEDIAPIPE_IMPORT_ERROR = exc
+
+try:
+    import numpy as np
+    NUMPY_IMPORT_ERROR = None
+except Exception as exc:
+    np = None
+    NUMPY_IMPORT_ERROR = exc
+
 import math
 
 logger = logging.getLogger(__name__)
 
 TARGET_IMAGE_SIZE = (320, 240)  # Optimized for performance
 
-# MediaPipe setup
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5)
+_face_mesh = None
+_face_mesh_lock = threading.Lock()
+
+
+def _ensure_runtime_dependencies() -> None:
+    if CV2_IMPORT_ERROR is not None:
+        logger.exception("cv2 import failed", exc_info=CV2_IMPORT_ERROR)
+        raise RuntimeError("OpenCV (cv2) is unavailable") from CV2_IMPORT_ERROR
+    if NUMPY_IMPORT_ERROR is not None:
+        logger.exception("numpy import failed", exc_info=NUMPY_IMPORT_ERROR)
+        raise RuntimeError("NumPy is unavailable") from NUMPY_IMPORT_ERROR
+
+
+def get_face_mesh():
+    global _face_mesh
+    _ensure_runtime_dependencies()
+
+    if MEDIAPIPE_IMPORT_ERROR is not None:
+        logger.exception("mediapipe import failed", exc_info=MEDIAPIPE_IMPORT_ERROR)
+        raise RuntimeError("MediaPipe is unavailable") from MEDIAPIPE_IMPORT_ERROR
+
+    if not hasattr(mp, "solutions"):
+        raise RuntimeError("MediaPipe package loaded incorrectly (missing solutions module)")
+
+    if _face_mesh is None:
+        with _face_mesh_lock:
+            if _face_mesh is None:
+                try:
+                    mp_face_mesh = mp.solutions.face_mesh
+                    _face_mesh = mp_face_mesh.FaceMesh(
+                        max_num_faces=1,
+                        refine_landmarks=True,
+                        min_detection_confidence=0.5,
+                    )
+                    logger.info("MediaPipe FaceMesh initialized")
+                except Exception:
+                    logger.exception("MediaPipe FaceMesh initialization failed")
+                    raise
+    return _face_mesh
 
 # Landmark indices
 LEFT_EYE = [33, 160, 158, 133, 153, 144]
@@ -85,6 +140,7 @@ def calculate_head_pose(landmarks, img_w, img_h):
 def extract_features(image: np.ndarray) -> list[float]:
     """Extract 13 features from image for fatigue prediction."""
     try:
+        face_mesh = get_face_mesh()
         h, w, _ = image.shape
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(rgb)
@@ -171,6 +227,7 @@ def _prepare_tensor_from_image(image: np.ndarray, input_shape: list[Any]) -> np.
 
 
 def decode_image_from_bytes(image_bytes: bytes) -> np.ndarray:
+    _ensure_runtime_dependencies()
     np_buffer = np.frombuffer(image_bytes, dtype=np.uint8)
     image = cv2.imdecode(np_buffer, cv2.IMREAD_COLOR)
     if image is None:

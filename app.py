@@ -5,27 +5,71 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+    SLOWAPI_IMPORT_ERROR = None
+except Exception as exc:
+    Limiter = None
+    _rate_limit_exceeded_handler = None
+    get_remote_address = None
+    RateLimitExceeded = None
+    SlowAPIMiddleware = None
+    SLOWAPI_IMPORT_ERROR = exc
 
-from inference import run_inference
-from model import get_onnx_session
+try:
+    from inference import run_inference
+    from model import get_onnx_session
+    IMPORT_INIT_ERROR = None
+except Exception as exc:
+    run_inference = None
+    get_onnx_session = None
+    IMPORT_INIT_ERROR = exc
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Rate limiting
-limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
+if Limiter is not None:
+    limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
+else:
+    class _NoopLimiter:
+        def limit(self, _rule: str):
+            def _decorator(func):
+                return func
+            return _decorator
+
+    limiter = _NoopLimiter()
 
 app = FastAPI(title="Fatigue Detection API", version="1.0.0")
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
+if Limiter is not None:
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+else:
+    logger.warning("slowapi is unavailable; rate limiting is disabled")
 
-session = get_onnx_session()
+session = None
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    global session
+    logger.info("FastAPI startup initialized")
+    if SLOWAPI_IMPORT_ERROR is not None:
+        logger.exception("slowapi import failed", exc_info=SLOWAPI_IMPORT_ERROR)
+    if IMPORT_INIT_ERROR is not None:
+        logger.exception("Module import failed during startup", exc_info=IMPORT_INIT_ERROR)
+        return
+
+    try:
+        session = get_onnx_session()
+        logger.info("Model session initialized successfully")
+    except Exception:
+        session = None
+        logger.exception("Model session failed to initialize")
 
 
 # Custom exception handler for consistent error responses
@@ -38,23 +82,41 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
+if RateLimitExceeded is not None:
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
+        return JSONResponse(
+            status_code=429,
+            content={"status": "error", "message": "Rate limit exceeded. Try again later."}
+        )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled server error")
     return JSONResponse(
-        status_code=429,
-        content={"status": "error", "message": "Rate limit exceeded. Try again later."}
+        status_code=500,
+        content={"status": "error", "message": "Unexpected server error."}
     )
 
 
 @app.get("/")
 async def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+    if IMPORT_INIT_ERROR is not None:
+        return {"status": "error"}
+    return {"status": "ok" if session is not None else "error"}
 
 
 @app.post("/api/v1/predict")
 @limiter.limit("5/minute")  # Stricter limit for prediction endpoint
 async def predict(request: Request, image: UploadFile = File(...)) -> dict[str, Any]:
     logger.info(f"Received prediction request: {image.filename}")
+
+    if IMPORT_INIT_ERROR is not None:
+        raise HTTPException(status_code=503, detail="Service initialization failed. Check startup logs.")
+
+    if session is None:
+        raise HTTPException(status_code=503, detail="Model is not available. Please try again later.")
     
     # Security: Validate content type
     allowed_types = ["image/jpeg", "image/png", "image/jpg"]
@@ -99,7 +161,7 @@ async def predict(request: Request, image: UploadFile = File(...)) -> dict[str, 
         logger.warning(f"Validation error: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error(f"Inference failed: {exc}")
+        logger.exception("Inference failed")
         raise HTTPException(status_code=500, detail="Internal server error during inference.") from exc
 
 
