@@ -25,9 +25,19 @@ async def predict(image: UploadFile = File(...)) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
         result = run_inference(session, image_bytes)
+
+        # Determine model input type
+        input_meta = session.get_inputs()[0]
+        input_shape = input_meta.shape
+        if len(input_shape) == 2 and input_shape[1] == 13:
+            model_input_type = "feature"
+        else:
+            model_input_type = "image"
+
         return {
             "status": "success",
             "prediction": result,
+            "model_input_type": model_input_type,
         }
     except HTTPException:
         raise
