@@ -41,7 +41,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 if Limiter is not None:
-    limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
+    limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 else:
     class _NoopLimiter:
         def limit(self, _rule: str):
@@ -72,6 +72,9 @@ last_prediction = "unknown"
 last_confidence = 0.0
 last_ear = 0.0
 last_mar = 0.0
+last_hr = 72
+last_temperature = 36.5
+last_spo2 = 98
 
 
 def _update_prediction_state(prediction: Any, confidence: float, ear: float, mar: float) -> None:
@@ -81,6 +84,19 @@ def _update_prediction_state(prediction: Any, confidence: float, ear: float, mar
         last_confidence = float(confidence)
         last_ear = float(ear)
         last_mar = float(mar)
+    logger.info(
+        "State updated: prediction=%s confidence=%.3f ear=%.4f mar=%.4f",
+        prediction,
+        float(confidence),
+        float(ear),
+        float(mar),
+    )
+
+
+def _current_prediction_label(result: Any) -> Any:
+    if isinstance(result, dict):
+        return result.get("label", result.get("prediction", result.get("status", "unknown")))
+    return result
 
 
 @app.on_event("startup")
@@ -152,12 +168,23 @@ async def combined_data() -> dict[str, Any]:
         current_confidence = last_confidence
         current_ear = last_ear
         current_mar = last_mar
+        current_hr = last_hr
+        current_temperature = last_temperature
+        current_spo2 = last_spo2
+
+    logger.info(
+        "combined_data response: prediction=%s confidence=%.3f ear=%.4f mar=%.4f",
+        current_prediction,
+        current_confidence,
+        current_ear,
+        current_mar,
+    )
 
     return {
         "sensor": {
-            "hr": 72,
-            "temperature": 36.5,
-            "spo2": 98,
+            "hr": current_hr,
+            "temperature": current_temperature,
+            "spo2": current_spo2,
         },
         "perclos": {
             "ear": current_ear,
@@ -176,6 +203,12 @@ async def vehicle_combined_data() -> dict[str, Any]:
     with state_lock:
         current_prediction = last_prediction
         current_confidence = last_confidence
+
+    logger.info(
+        "vehicle_combined_data response: prediction=%s confidence=%.3f",
+        current_prediction,
+        current_confidence,
+    )
 
     return {
         "speed": 0,
@@ -224,11 +257,12 @@ async def _predict_from_bytes(route_name: str, image_bytes: bytes) -> dict[str, 
 
     try:
         result, confidence = await asyncio.to_thread(run_inference, session, image_bytes)
-        _update_prediction_state(result, confidence, last_ear, last_mar)
-        logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}")
+        label = _current_prediction_label(result)
+        _update_prediction_state(label, confidence, last_ear, last_mar)
+        logger.info(f"Prediction completed for {route_name}: {label}, confidence: {confidence:.3f}")
         return {
             "status": "success",
-            "prediction": result,
+            "prediction": label,
             "confidence": round(confidence, 3),
         }
     except ValueError as exc:
@@ -250,10 +284,12 @@ async def _predict_from_image(route_name: str, image) -> dict[str, Any]:
 
     try:
         analysis = await asyncio.to_thread(analyze_frame, session, image)
-        result = analysis["prediction"]
+        result = analysis.get("label", analysis.get("prediction", "unknown"))
         confidence = analysis["confidence"]
-        _update_prediction_state(result, confidence, analysis["ear"], analysis["mar"])
-        logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}")
+        ear = analysis.get("ear", last_ear)
+        mar = analysis.get("mar", last_mar)
+        _update_prediction_state(result, confidence, ear, mar)
+        logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}, ear: {ear:.4f}, mar: {mar:.4f}")
         return {
             "status": "success",
             "prediction": result,
