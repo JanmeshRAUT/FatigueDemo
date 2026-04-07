@@ -66,30 +66,74 @@ if Limiter is not None:
 else:
     logger.warning("slowapi is unavailable; rate limiting is disabled")
 
+import time
+
 session = None
 state_lock = threading.Lock()
+
+# Temporal smoothing (prevents UI flicker on deploy)
+ML_INTERVAL = 1.0  # Only update ML prediction every 1 second
+last_ml_time = 0.0
+
+# Cached state returned to frontend (all synchronized to ML_INTERVAL)
 last_prediction = "unknown"
 last_confidence = 0.0
 last_ear = 0.0
 last_mar = 0.0
+last_pitch = 0.0
+last_yaw = 0.0
+last_roll = 0.0
+last_head_position = "Center"
 last_hr = 72
 last_temperature = 36.5
 last_spo2 = 98
 
+# Calibration state
+is_calibrating = False
+calibration_frames = 0
+CALIBRATION_FRAMES_NEEDED = 30
 
-def _update_prediction_state(prediction: Any, confidence: float, ear: float, mar: float) -> None:
-    global last_prediction, last_confidence, last_ear, last_mar
+
+def _calculate_head_position(pitch: float, yaw: float) -> str:
+    """Calculate head position label from pitch and yaw angles."""
+    vertical = ""
+    if pitch > 10:
+        vertical = "Down"
+    elif pitch < -10:
+        vertical = "Up"
+    
+    horizontal = ""
+    if yaw > 10:
+        horizontal = "Right"
+    elif yaw < -10:
+        horizontal = "Left"
+    
+    position = f"{vertical} {horizontal}".strip()
+    return position if position else "Center"
+
+
+def _update_prediction_state(prediction: Any, confidence: float, ear: float, mar: float, pitch: float, yaw: float, roll: float) -> None:
+    """Update all cached state synchronized to ML_INTERVAL (ensures consistency)."""
+    global last_prediction, last_confidence, last_ear, last_mar, last_pitch, last_yaw, last_roll, last_head_position, last_ml_time
     with state_lock:
         last_prediction = prediction
         last_confidence = float(confidence)
         last_ear = float(ear)
         last_mar = float(mar)
+        last_pitch = float(pitch)
+        last_yaw = float(yaw)
+        last_roll = float(roll)
+        last_head_position = _calculate_head_position(pitch, yaw)
+        last_ml_time = time.time()
     logger.info(
-        "State updated: prediction=%s confidence=%.3f ear=%.4f mar=%.4f",
+        "State synchronized (ML update): prediction=%s confidence=%.3f ear=%.4f mar=%.4f pitch=%.1f yaw=%.1f position=%s",
         prediction,
         float(confidence),
         float(ear),
         float(mar),
+        pitch,
+        yaw,
+        last_head_position,
     )
 
 
@@ -168,16 +212,23 @@ async def combined_data() -> dict[str, Any]:
         current_confidence = last_confidence
         current_ear = last_ear
         current_mar = last_mar
+        current_pitch = last_pitch
+        current_yaw = last_yaw
+        current_roll = last_roll
+        current_head_position = last_head_position
         current_hr = last_hr
         current_temperature = last_temperature
         current_spo2 = last_spo2
+        current_is_calibrating = is_calibrating
 
-    logger.info(
-        "combined_data response: prediction=%s confidence=%.3f ear=%.4f mar=%.4f",
+    logger.debug(
+        "combined_data response: prediction=%s confidence=%.3f ear=%.4f mar=%.4f pitch=%.1f yaw=%.1f",
         current_prediction,
         current_confidence,
         current_ear,
         current_mar,
+        current_pitch,
+        current_yaw,
     )
 
     return {
@@ -191,10 +242,17 @@ async def combined_data() -> dict[str, Any]:
             "mar": current_mar,
             "status": current_prediction,
         },
+        "head_position": {
+            "pitch": round(current_pitch, 2),
+            "yaw": round(current_yaw, 2),
+            "roll": round(current_roll, 2),
+            "position": current_head_position,
+        },
         "prediction": {
             "status": current_prediction,
             "confidence": current_confidence,
         },
+        "system_status": "Initializing" if current_is_calibrating else "Active",
     }
 
 
@@ -203,21 +261,32 @@ async def vehicle_combined_data() -> dict[str, Any]:
     with state_lock:
         current_prediction = last_prediction
         current_confidence = last_confidence
+        current_pitch = last_pitch
+        current_yaw = last_yaw
+        current_head_position = last_head_position
+        current_is_calibrating = is_calibrating
 
-    logger.info(
-        "vehicle_combined_data response: prediction=%s confidence=%.3f",
+    logger.debug(
+        "vehicle_combined_data response: prediction=%s confidence=%.3f head_position=%s",
         current_prediction,
         current_confidence,
+        current_head_position,
     )
 
     return {
         "speed": 0,
         "steering_angle": 0,
         "lane_status": "stable",
+        "head_position": {
+            "pitch": round(current_pitch, 2),
+            "yaw": round(current_yaw, 2),
+            "position": current_head_position,
+        },
         "prediction": {
             "status": current_prediction,
             "confidence": current_confidence,
         },
+        "system_status": "Initializing" if current_is_calibrating else "Active",
     }
 
 
@@ -273,34 +342,77 @@ async def _predict_from_bytes(route_name: str, image_bytes: bytes) -> dict[str, 
         raise HTTPException(status_code=500, detail="Internal server error during inference.")
 
 
-async def _predict_from_image(route_name: str, image) -> dict[str, Any]:
+async def _predict_from_image_impl(route_name: str, image) -> dict[str, Any]:
+    """Run face analysis on image. Update cached state ONLY when ML_INTERVAL passes."""
+    global is_calibrating, calibration_frames
+    
     if IMPORT_INIT_ERROR is not None:
         raise HTTPException(status_code=503, detail="Service initialization failed. Check startup logs.")
 
     if session is None:
         raise HTTPException(status_code=503, detail="Model is not available. Please try again later.")
 
-    logger.info(f"Processing prediction from {route_name} (decoded image)")
+    logger.debug(f"Analyzing frame from {route_name}")
 
     try:
         analysis = await asyncio.to_thread(analyze_frame, session, image)
         result = analysis.get("label", analysis.get("prediction", "unknown"))
         confidence = analysis["confidence"]
-        ear = analysis.get("ear", last_ear)
-        mar = analysis.get("mar", last_mar)
-        _update_prediction_state(result, confidence, ear, mar)
-        logger.info(f"Prediction completed for {route_name}: {result}, confidence: {confidence:.3f}, ear: {ear:.4f}, mar: {mar:.4f}")
-        return {
-            "status": "success",
-            "prediction": result,
-            "confidence": round(confidence, 3),
-        }
+        ear = analysis.get("ear", 0.0)
+        mar = analysis.get("mar", 0.0)
+        pitch = analysis.get("pitch", 0.0)
+        yaw = analysis.get("yaw", 0.0)
+        roll = analysis.get("roll", 0.0)
+        
+        # Calibration logic: collect frames for initial state
+        if is_calibrating:
+            calibration_frames += 1
+            if calibration_frames >= CALIBRATION_FRAMES_NEEDED:
+                is_calibrating = False
+                calibration_frames = 0
+                logger.info("Calibration complete")
+        
+        # Only update ALL cached state if ML_INTERVAL has passed (ensures consistency)
+        current_time = time.time()
+        should_update_ml = (current_time - last_ml_time) >= ML_INTERVAL
+        
+        if should_update_ml:
+            _update_prediction_state(result, confidence, ear, mar, pitch, yaw, roll)
+            logger.info(f"State synchronized: {result} (confidence={confidence:.3f}, ear={ear:.4f}, mar={mar:.4f})")
+        else:
+            logger.debug(f"Frame skipped: returning cached state (next ML update in {ML_INTERVAL - (current_time - last_ml_time):.2f}s)")
+        
+        # Always return current cached state (synchronized)
+        with state_lock:
+            return {
+                "status": "success" if not is_calibrating else "initializing",
+                "prediction": last_prediction,
+                "confidence": round(last_confidence, 3),
+                "ear": round(last_ear, 4),
+                "mar": round(last_mar, 4),
+                "head_position": last_head_position,
+            }
     except ValueError as exc:
         logger.warning(f"Validation error for {route_name}: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
         logger.exception(f"Inference failed for {route_name}")
         raise HTTPException(status_code=500, detail="Internal server error during inference.")
+
+
+async def _predict_from_image(route_name: str, image) -> dict[str, Any]:
+    """Wrapper for compatibility with existing callers."""
+    return await _predict_from_image_impl(route_name, image)
+
+
+@app.get("/api/calibrate")
+async def start_calibration() -> dict[str, str]:
+    """Start calibration mode (collect baseline frames for headpose)."""
+    global is_calibrating, calibration_frames
+    is_calibrating = True
+    calibration_frames = 0
+    logger.info(f"Calibration started (will collect {CALIBRATION_FRAMES_NEEDED} frames)")
+    return {"status": "calibrating", "frames_needed": str(CALIBRATION_FRAMES_NEEDED)}
 
 
 @app.post("/api/v1/predict")
@@ -318,6 +430,9 @@ async def predict(request: Request, file: UploadFile = File(..., alias="file")) 
 async def websocket_predict(websocket: WebSocket):
     await websocket.accept()
     logger.info(f"WebSocket connection opened on {websocket.url.path} from {websocket.client}")
+    
+    # Frame skipping for temporal smoothing (process 4 out of 5 frames = 80% sampling)
+    frame_counter = 0
 
     try:
         while True:
@@ -331,7 +446,11 @@ async def websocket_predict(websocket: WebSocket):
                 await websocket.send_json({"status": "error", "message": "Invalid JSON payload. Expected {\"image_data\": \"data:image/jpeg;base64,...\"}."})
                 continue
 
-            logger.info(f"WebSocket frame received on {websocket.url.path} from {websocket.client}")
+            frame_counter += 1
+            # Skip every 5th frame (process 4 out of 5 frames for CPU breathing room)
+            should_process = (frame_counter % 5 != 0)
+            
+            logger.debug(f"WebSocket frame #{frame_counter} received on {websocket.url.path}")
             image_data = payload.get("image_data") if isinstance(payload, dict) else None
             if not image_data:
                 await websocket.send_json({"status": "error", "message": "Missing image_data field."})
@@ -351,8 +470,21 @@ async def websocket_predict(websocket: WebSocket):
                 except (binascii.Error, ValueError) as exc:
                     raise ValueError("Invalid base64 image data.") from exc
 
-                image = decode_image_from_bytes(frame_bytes)
-                response = await _predict_from_image("ws:/ws", image)
+                # Process the frame if not skipped
+                if should_process:
+                    image = decode_image_from_bytes(frame_bytes)
+                    response = await _predict_from_image("ws:/ws", image)
+                else:
+                    # Skipped frame: return cached state without processing (temporal smoothing)
+                    with state_lock:
+                        cached_response = {
+                            "status": "success",
+                            "prediction": last_prediction,
+                            "confidence": round(last_confidence, 3),
+                        }
+                    response = cached_response
+                    logger.debug(f"Frame #{frame_counter} skipped (temporal smoothing, ML throttle active)")
+                
                 await websocket.send_json(response)
             except HTTPException as exc:
                 await websocket.send_json({"status": "error", "message": exc.detail})

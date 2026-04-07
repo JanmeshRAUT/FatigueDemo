@@ -4,6 +4,7 @@
 *.log
 .git_disconnected_*/
 
+backend/
 # Python
 __pycache__/
 *.py[cod]

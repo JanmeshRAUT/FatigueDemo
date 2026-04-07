@@ -346,10 +346,13 @@ def analyze_frame(session: Any, image: np.ndarray) -> dict[str, Any]:
         elif isinstance(probs, list):
             confidence = max(probs)
 
-    logger.debug(f"Frame analyzed: prediction={prediction}, confidence={confidence}, ear={ear}, mar={mar}")
+    logger.debug(f"Frame analyzed: prediction={prediction}, confidence={confidence}, ear={ear}, mar={mar}, pitch={pitch:.1f}, yaw={yaw:.1f}")
     return {
         "prediction": prediction,
         "confidence": confidence,
         "ear": ear,
         "mar": mar,
+        "pitch": pitch,
+        "yaw": yaw,
+        "roll": roll,
     }
